@@ -892,9 +892,9 @@ client.on("interactionCreate", async (interaction) => {
 			await interaction.followUp(`你要付給別人.....多少錢?蛤?`);
 			return;
 		}
-		if (amount < 15) {
+		if (amount < 70) {
 			await interaction.followUp(
-				`太少了啦，至少要超過 15 <:freecoin:1171871969617117224> 。`
+				`太少了啦，至少要超過 70 <:freecoin:1171871969617117224> 。`
 			);
 			return;
 		}
