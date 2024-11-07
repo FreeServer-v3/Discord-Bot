@@ -26,21 +26,39 @@ const fetch = require("node-fetch");
 const cron = require("node-cron");
 
 const adminUserId = ["490731820552290324", "292596328226095104"];
-answers = {};
-isQuestionIng = false;
-questionMessageID = 0;
-questionUserID = 0;
-dclogdata = "";
-questionAmount = 0;
-questionGlobal = "";
-userSelectionGlobal = {};
-ratelimit = {};
-exp = {};
-userLevelCache = {};
+let questionState = {
+    isActive: false,
+    messageId: null,
+    userId: null,
+    amount: 0,
+    answers: [],
+    timer: null,
+    question: ''
+};
+let dclogdata = "";
+let userSelectionGlobal = {};
+let ratelimit = {};
+let exp = {};
+let userLevelCache = {};
 
 client.on("ready", () => {
 	console.log(`Logged in as ${client.user.tag}!`);
 });
+
+function resetQuestionState() {
+    if (questionState.timer) {
+        clearTimeout(questionState.timer);
+    }
+    questionState = {
+        isActive: false,
+        messageId: null,
+        userId: null,
+        amount: 0,
+        answers: [],
+        timer: null,
+        question: ''
+    };
+}
 
 async function levelup(userId) {
 	await dclog("DB", `Level up user data into db: \`${userId}\``);
@@ -520,38 +538,55 @@ client.on("messageCreate", async (message) => {
 
 	// reply question
 	if (message.channelId == process.env.QUESTION_CHANNEL) {
-		if (
-			message.reference == null ||
-			message.reference.messageId != questionMessageID
-		)
-			return;
-
-		if (message.author.id == questionUserID)
-			return message.reply(`你回答自己的問題幹嘛....`);
-
-		if (!answers.includes(message.content)) return message.react("❌");
-
-		message.react("<:icon_checkmark:1173699014538039417>");
-		await message.reply(`Wooo! 你答對了! 正在發放獎勵...`);
-		isQuestionIng = false;
-		client.channels.cache
-			.get(process.env.QUESTION_CHANNEL)
-			.messages.fetch(questionMessageID)
-			.then((message) =>
-				message.edit(
-					`# 此問題已結束!\n某人找到正確答案ㄌ...\n<@&1171902415436525629>`
-				)
-			);
-		const user = await getUser(message.author.id);
-		if (user.error)
-			return message.reply(`真是可惜，你沒有註冊...只好把獎勵充公ㄌowo`);
-
-		await setUserCoins(message.author.id, user.info.coins + questionAmount);
-		questionMessageID = 0;
-		return message.reply(
-			`你已成功獲得 ${questionAmount} <:freecoin:1171871969617117224>`
-		);
-	}
+        if (
+            !questionState.isActive ||
+            message.reference?.messageId !== questionState.messageId
+        ) return;
+    
+        if (message.author.id === questionState.userId) {
+            return message.reply(`你回答自己的問題幹嘛....`);
+        }
+    
+        try {
+            if (!questionState.answers.includes(message.content)) {
+                return message.react("❌");
+            }
+    
+            await message.react("<:icon_checkmark:1173699014538039417>");
+            await message.reply(`Wooo! 你答對了! 正在發放獎勵...`);
+    
+            const channel = client.channels.cache.get(process.env.QUESTION_CHANNEL);
+            if (channel) {
+                try {
+                    const questionMessage = await channel.messages.fetch(questionState.messageId);
+                    await questionMessage.edit(
+                        `# 此問題已結束!\n某人找到正確答案ㄌ...\n<@&1171902415436525629>`
+                    );
+                } catch (error) {
+                    console.error('更新問題訊息時發生錯誤:', error);
+                }
+            }
+    
+            const user = await getUser(message.author.id);
+            if (user.error) {
+                resetQuestionState();
+                return message.reply(`真是可惜，你沒有註冊...只好把獎勵充公ㄌowo`);
+            }
+    
+            await setUserCoins(message.author.id, user.info.coins + questionState.amount);
+            const response = await message.reply(
+                `你已成功獲得 ${questionState.amount} <:freecoin:1171871969617117224>`
+            );
+    
+            // 重置狀態
+            resetQuestionState();
+            return response;
+        } catch (error) {
+            console.error('處理答案時發生錯誤:', error);
+            resetQuestionState();
+            return message.reply('處理答案時發生錯誤，請通知管理員。');
+        }
+    }
 
 	// user join event
 	if (message.channelId == 1161357738610270314n) {
@@ -907,83 +942,102 @@ client.on("interactionCreate", async (interaction) => {
 	}
 
 	if (interaction.commandName === "question") {
-		await interaction.deferReply({ ephemeral: true });
-		if (isQuestionIng) {
-			await interaction.followUp(`目前有人在出題中，請稍後再試。`);
-			return;
-		}
-		const amount = interaction.options.getInteger("數量");
-		if (amount <= 0) {
-			await interaction.followUp(`你要付給別人.....多少錢?蛤?`);
-			return;
-		}
-		if (amount < 15) {
-			await interaction.followUp(
-				`太少了啦，至少要超過 15 <:freecoin:1171871969617117224> 。`
-			);
-			return;
-		}
-		const question = interaction.options.getString("問題");
-		if (
-			question.includes("<@") ||
-			question.includes("@everyone") ||
-			question.includes("@here") ||
-			question.includes("<!@")
-		) {
-			await interaction.followUp(
-				`Hmm. 你是不是在嘗試亂tag? 把所有的提及刪掉再試一次。`
-			);
-			return;
-		}
-		const user = await getUser(interaction.user.id);
-		if (user.error) {
-			await interaction.followUp(
-				`找不到你的帳號，因此你付不了 FreeCoin...請前往 ${dashurl} 註冊。`
-			);
-			return;
-		}
-		if (user.info.coins < amount) {
-			await interaction.followUp(`你沒有足夠的 FreeCoin 可以支付!`);
-			return;
-		}
-
-		await setUserCoins(interaction.user.id, user.info.coins - amount);
-		answers = interaction.options.getString("正確解答").split(",");
-		questionAmount = amount;
-		questionUserID = interaction.user.id;
-		isQuestionIng = true;
-
-		const qmessage = `
-# 新的問題! 
-
-<:icon_discord_channel:1162324963424993371> 發起人: <@${interaction.user.id}>
-<:icon_discord_channel:1162324963424993371> 獎勵: ${amount} <:freecoin:1171871969617117224>
-<:icon_discord_channel:1162324963424993371> 出題者的問題如下:
-
-> ## ${question}
-
-剩餘時間: <t:${Math.floor(Date.now() / 1000) + 60}:R>
-<@&1171902415436525629>
+        await interaction.deferReply({ ephemeral: true });
+        if (questionState.isActive) {
+            await interaction.followUp(`目前有人在出題中，請稍後再試。`);
+            return;
+        }
+        const amount = interaction.options.getInteger("數量");
+        if (amount <= 0) {
+            await interaction.followUp(`你要付給別人.....多少錢?蛤?`);
+            return;
+        }
+        if (amount < 15) {
+            await interaction.followUp(
+                `太少了啦，至少要超過 15 <:freecoin:1171871969617117224> 。`
+            );
+            return;
+        }
+        const question = interaction.options.getString("問題");
+        if (
+            question.includes("<@") ||
+            question.includes("@everyone") ||
+            question.includes("@here") ||
+            question.includes("<!@")
+        ) {
+            await interaction.followUp(
+                `Hmm. 你是不是在嘗試亂tag? 把所有的提及刪掉再試一次。`
+            );
+            return;
+        }
+        const user = await getUser(interaction.user.id);
+        if (user.error) {
+            await interaction.followUp(
+                `找不到你的帳號，因此你付不了 FreeCoin...請前往 ${dashurl} 註冊。`
+            );
+            return;
+        }
+        if (user.info.coins < amount) {
+            await interaction.followUp(`你沒有足夠的 FreeCoin 可以支付!`);
+            return;
+        }
+    
+        await setUserCoins(interaction.user.id, user.info.coins - amount);
+        
+        // 更新問題狀態
+        questionState.isActive = true;
+        questionState.userId = interaction.user.id;
+        questionState.amount = amount;
+        questionState.answers = interaction.options.getString("正確解答").split(",");
+        questionState.question = question;
+    
+        const qmessage = `
+    # 新的問題! 
+    
+    <:icon_discord_channel:1162324963424993371> 發起人: <@${interaction.user.id}>
+    <:icon_discord_channel:1162324963424993371> 獎勵: ${amount} <:freecoin:1171871969617117224>
+    <:icon_discord_channel:1162324963424993371> 出題者的問題如下:
+    
+    > ## ${question}
+    
+    剩餘時間: <t:${Math.floor(Date.now() / 1000) + 60}:R>
+    <@&1171902415436525629>
         `;
-		const questionMessage = await client.channels.cache
-			.get(process.env.QUESTION_CHANNEL)
-			.send(qmessage);
-		questionMessageID = questionMessage.id;
-
-		setTimeout(async () => {
-			if (isQuestionIng) {
-				await questionMessage.edit(
-					`# 此問題已結束!\n問題:${question}\n好像沒有人答對...\n<@&1171902415436525629>`
-				);
-				questionMessageID = 0;
-				isQuestionIng = false;
-			}
-		}, 60000);
-
-		await interaction.followUp(
-			`已成功發起問題: https://discord.com/channels/1161357736819302500/${process.env.QUESTION_CHANNEL}/${questionMessageID} ，請等待回答。`
-		);
-	}
+    
+        try {
+            const questionMessage = await client.channels.cache
+                .get(process.env.QUESTION_CHANNEL)
+                .send(qmessage);
+            
+            questionState.messageId = questionMessage.id;
+    
+            // 設置計時器
+            if (questionState.timer) {
+                clearTimeout(questionState.timer);
+            }
+            questionState.timer = setTimeout(async () => {
+                try {
+                    if (questionState.isActive) {
+                        await questionMessage.edit(
+                            `# 此問題已結束!\n問題:${question}\n好像沒有人答對...\n<@&1171902415436525629>`
+                        );
+                        resetQuestionState();
+                    }
+                } catch (error) {
+                    console.error('計時器處理錯誤:', error);
+                    resetQuestionState();
+                }
+            }, 60000);
+    
+            await interaction.followUp(
+                `已成功發起問題: https://discord.com/channels/1161357736819302500/${process.env.QUESTION_CHANNEL}/${questionState.messageId} ，請等待回答。`
+            );
+        } catch (error) {
+            console.error('發送問題時發生錯誤:', error);
+            resetQuestionState();
+            await interaction.followUp('發送問題時發生錯誤，請稍後再試。');
+        }
+    }
 
 	if (interaction.commandName === "togglemention") {
 		const mention = await getUserMention(interaction.user.id);
