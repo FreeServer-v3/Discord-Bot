@@ -520,38 +520,49 @@ client.on("messageCreate", async (message) => {
 
 	// reply question
 	if (message.channelId == process.env.QUESTION_CHANNEL) {
-		if (
-			message.reference == null ||
-			message.reference.messageId != questionMessageID
-		)
-			return;
+    		let questionCount = 0;
 
-		if (message.author.id == questionUserID)
-			return message.reply(`你回答自己的問題幹嘛....`);
+    		if (!message.reference || message.reference.messageId !== questionMessageID) return;
 
-		if (!answers.includes(message.content)) return message.react("❌");
+    		if (message.author.id === questionUserID) {
+        		return message.reply(`你回答自己的問題幹嘛....`);
+    		}
 
-		message.react("<:icon_checkmark:1173699014538039417>");
-		await message.reply(`Wooo! 你答對了! 正在發放獎勵...`);
-		isQuestionIng = false;
-		client.channels.cache
-			.get(process.env.QUESTION_CHANNEL)
-			.messages.fetch(questionMessageID)
-			.then((message) =>
-				message.edit(
-					`# 此問題已結束!\n某人找到正確答案ㄌ...\n<@&1171902415436525629>`
-				)
-			);
-		const user = await getUser(message.author.id);
-		if (user.error)
-			return message.reply(`真是可惜，你沒有註冊...只好把獎勵充公ㄌowo`);
+    		if (!answers.includes(message.content)) {
+        		return message.react("❌");
+    		}
 
-		await setUserCoins(message.author.id, user.info.coins + questionAmount);
-		questionMessageID = 0;
-		return message.reply(
-			`你已成功獲得 ${questionAmount} <:freecoin:1171871969617117224>`
-		);
+    		await message.react("✅");
+    		await message.reply(`Wooo! 你答對了! 正在發放獎勳...`);
+
+    		questionCount += 1;
+
+    		if (questionCount > 1) {
+  		      await message.reply(`too slow`);
+  		  }
+
+ 		   isQuestionIng = false;
+
+  		  try {
+     		   const questionMessage = await message.channel.messages.fetch(questionMessageID);
+      		  await questionMessage.edit(
+     		       `# 此問題已結束!\n某人找到正確答案ㄌ...\n<@&1171902415436525629>`
+      		  );
+  		  } catch (error) {
+    		    console.error("Failed to fetch or edit question message:", error);
+   		 }
+
+  		  const user = await getUser(message.author.id);
+ 		   if (user.error) {
+   		     return message.reply(`真是可惜，你沒有註冊...只好把獎勳充公ㄌowo`);
+  		  }
+
+    		await setUserCoins(message.author.id, user.info.coins + questionAmount);
+    		questionMessageID = 0;
+
+    		return message.reply(`你已成功獲得 ${questionAmount} <:freecoin:1171871969617117224>`);
 	}
+
 
 	// user join event
 	if (message.channelId == 1161357738610270314n) {
