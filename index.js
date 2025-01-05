@@ -537,8 +537,9 @@ client.on("messageCreate", async (message) => {
 
     		questionCount += 1;
 
-    		if (questionCount > 1) {
+    		if (questionCount > 0) {
   		      await message.reply(`too slow`);
+			  return;
   		  }
 
  		   isQuestionIng = false;
@@ -552,12 +553,12 @@ client.on("messageCreate", async (message) => {
     		    console.error("Failed to fetch or edit question message:", error);
    		 }
 
-  		  const user = await getUser(message.author.id);
- 		   if (user.error) {
-   		     return message.reply(`真是可惜，你沒有註冊...只好把獎勳充公ㄌowo`);
-  		  }
+  		  // const user = await getUser(message.author.id);
+ 		  // if (user.error) {
+   		  //   return message.reply(`真是可惜，你沒有註冊...只好把獎勳充公ㄌowo`);
+  		  //}
 
-    		await setUserCoins(message.author.id, user.info.coins + questionAmount);
+    		// await setUserCoins(message.author.id, user.info.coins + questionAmount);
     		questionMessageID = 0;
 
     		return message.reply(`你已成功獲得 ${questionAmount} <:freecoin:1171871969617117224>`);
@@ -652,7 +653,7 @@ client.on("interactionCreate", async (interaction) => {
 	);
 
 	if (
-		interaction.channelId != 1325435691957485591 &&
+		interaction.channelId != 1325436006937395260 &&
 		!adminUserId.includes(interaction.user.id)
 	) {
 		await interaction.reply({ content: "你要不要看看頻道名稱是啥?" });
@@ -918,9 +919,10 @@ client.on("interactionCreate", async (interaction) => {
 	}
 
 	if (interaction.commandName === "question") {
+		try {
 		await interaction.deferReply({ ephemeral: true });
 		if (isQuestionIng) {
-			await interaction.followUp(`目前有人在出題中，請稍後再試。`);
+			await interaction.followUp(`你已經出題了，請稍後再試。`);
 			return;
 		}
 		const amount = interaction.options.getInteger("數量");
@@ -946,19 +948,19 @@ client.on("interactionCreate", async (interaction) => {
 			);
 			return;
 		}
-		const user = await getUser(interaction.user.id);
-		if (user.error) {
-			await interaction.followUp(
-				`找不到你的帳號，因此你付不了 FreeCoin...請前往 ${dashurl} 註冊。`
-			);
-			return;
-		}
-		if (user.info.coins < amount) {
-			await interaction.followUp(`你沒有足夠的 FreeCoin 可以支付!`);
-			return;
-		}
+		// const user = await getUser(interaction.user.id);
+		//if (user.error) {
+		//	await interaction.followUp(
+		//		`找不到你的帳號，因此你付不了 FreeCoin...請前往 ${dashurl} 註冊。`
+		//	);
+		//	return;
+		//	/ }
+		// if (user.info.coins < amount) {
+		//	await interaction.followUp(`你沒有足夠的 FreeCoin 可以支付!`);
+		//	return;
+		// }
 
-		await setUserCoins(interaction.user.id, user.info.coins - amount);
+		//await setUserCoins(interaction.user.id, user.info.coins - amount);
 		answers = interaction.options.getString("正確解答").split(",");
 		questionAmount = amount;
 		questionUserID = interaction.user.id;
@@ -994,8 +996,12 @@ client.on("interactionCreate", async (interaction) => {
 		await interaction.followUp(
 			`已成功發起問題: https://discord.com/channels/1161357736819302500/${process.env.QUESTION_CHANNEL}/${questionMessageID} ，請等待回答。`
 		);
-	}
-
+		} catch (error) {
+    console.error("Error handling interaction:", error);
+    if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: "Something went wrong!", ephemeral: true });
+    }
+}
 	if (interaction.commandName === "togglemention") {
 		const mention = await getUserMention(interaction.user.id);
 		if (mention) {
@@ -1019,7 +1025,7 @@ client.on("interactionCreate", async (interaction) => {
 			`## 你的等級: ${level}\n經驗值: \`${exper}/${requiredExp}\``
 		);
 	}
-});
+}});
 
 client.on("interactionCreate", async (interaction) => {
 	if (!interaction.isSelectMenu()) return;
