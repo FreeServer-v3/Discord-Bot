@@ -188,7 +188,7 @@ async function dclog(type, content) {
 	if (type == "DUMP") {
 		if (dclogdata.length == 0) return;
 
-		await client.channels.cache.get("1161357738610270313").send(dclogdata);
+		await client.channels.cache.get("1325439855815036991").send(dclogdata);
 		dclogdata = "";
 		return;
 	}
@@ -197,7 +197,7 @@ async function dclog(type, content) {
 	dclogdata = dclogdata.length ? `${dclogdata}\n${data}` : data;
 
 	if (dclogdata.split("\n").length > 10) {
-		await client.channels.cache.get("1161357738610270313").send(dclogdata);
+		await client.channels.cache.get("1325439855815036991").send(dclogdata);
 		dclogdata = "";
 	}
 }
@@ -652,7 +652,7 @@ client.on("interactionCreate", async (interaction) => {
 	);
 
 	if (
-		interaction.channelId != 1161357738211819647n &&
+		interaction.channelId != 1325435691957485591 &&
 		!adminUserId.includes(interaction.user.id)
 	) {
 		await interaction.reply({ content: "你要不要看看頻道名稱是啥?" });
